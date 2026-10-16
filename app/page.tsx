@@ -178,6 +178,48 @@ export default function DocumentPortalPage() {
           </div>
         </div>
 
+        {/* Quick Explorer Actions Toolbar */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setIsNewFolderOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+            >
+              <FolderPlus className="w-4 h-4 text-amber-600" />
+              <span>Nueva Carpeta</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setReplaceTargetFile(null);
+                setIsUploadOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+            >
+              <Upload className="w-4 h-4 text-blue-600" />
+              <span>Subir Archivos</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setReplaceTargetFile(null);
+                setIsUploadOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+            >
+              <FolderOpen className="w-4 h-4 text-emerald-600" />
+              <span>Subir Carpeta Completa</span>
+            </button>
+          </div>
+
+          <div className="text-xs text-slate-500 font-medium">
+            Ubicación actual:{' '}
+            <strong className="text-slate-800">
+              {currentFolder ? `/${currentFolder}` : 'Raíz (/)'}
+            </strong>
+          </div>
+        </div>
+
         {/* Content sections */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">

@@ -4,24 +4,50 @@ import { uploadFile } from '@/lib/storage';
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File | null;
-    const folder = (formData.get('folder') as string) || '';
+    const files = formData.getAll('files') as File[];
+    // Also support single 'file' key if used
+    const singleFile = formData.get('file') as File | null;
+    if (singleFile && files.length === 0) {
+      files.push(singleFile);
+    }
 
-    if (!file) {
+    const baseFolder = (formData.get('folder') as string) || '';
+    const paths = formData.getAll('paths') as string[];
+
+    if (!files || files.length === 0) {
       return NextResponse.json({ error: 'No se envió ningún archivo' }, { status: 400 });
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const uploaded = [];
 
-    const result = await uploadFile(folder, file.name, buffer);
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const customPath = paths[i] || ''; // e.g. "MiCarpeta/sub/archivo.pdf" or empty
+
+      let targetFolder = baseFolder;
+      let fileName = file.name;
+
+      if (customPath && customPath.includes('/')) {
+        const segments = customPath.split('/');
+        fileName = segments.pop() || file.name;
+        const relativeFolder = segments.join('/');
+        targetFolder = baseFolder ? `${baseFolder}/${relativeFolder}` : relativeFolder;
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const res = await uploadFile(targetFolder, fileName, buffer);
+      uploaded.push(res);
+    }
 
     return NextResponse.json({
-      message: 'Archivo subido correctamente',
-      ...result
+      message: `${uploaded.length} archivo(s) procesado(s) correctamente`,
+      count: uploaded.length,
+      uploaded,
     });
   } catch (error) {
-    console.error('Error uploading file:', error);
-    return NextResponse.json({ error: 'Error al subir el archivo' }, { status: 500 });
+    console.error('Error uploading file(s):', error);
+    return NextResponse.json({ error: 'Error al subir los archivos' }, { status: 500 });
   }
 }
