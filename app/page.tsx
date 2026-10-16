@@ -7,15 +7,13 @@ import { FolderCard } from '@/components/FolderCard';
 import { FileCard } from '@/components/FileCard';
 import { QrModal } from '@/components/QrModal';
 import { PdfModal } from '@/components/PdfModal';
-import { NewFolderModal } from '@/components/NewFolderModal';
-import { RenameModal } from '@/components/RenameModal';
 import { UploadToast, UploadStatus } from '@/components/UploadToast';
 import { FilesResponse, DocumentFile, FolderInfo } from '@/lib/types';
+import { Alerts } from '@/lib/alerts';
 import {
   Search,
   FolderOpen,
   FileText,
-  Upload,
   FolderPlus,
   FolderUp,
   Files,
@@ -37,7 +35,6 @@ export default function DocumentPortalPage() {
 
   // Modals state
   const [isQrOpen, setIsQrOpen] = useState<boolean>(false);
-  const [isNewFolderOpen, setIsNewFolderOpen] = useState<boolean>(false);
   const [viewingPdfFile, setViewingPdfFile] = useState<DocumentFile | null>(null);
   const [replacingTargetFile, setReplacingTargetFile] = useState<DocumentFile | null>(null);
 
@@ -50,19 +47,6 @@ export default function DocumentPortalPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
-
-  // Rename modal state
-  const [renameTarget, setRenameTarget] = useState<{
-    isOpen: boolean;
-    oldPath: string;
-    initialName: string;
-    isFolder: boolean;
-  }>({
-    isOpen: false,
-    oldPath: '',
-    initialName: '',
-    isFolder: false,
-  });
 
   // Read initial folder from URL query if present
   useEffect(() => {
@@ -161,6 +145,8 @@ export default function DocumentPortalPage() {
         isSuccess: true,
       });
 
+      Alerts.toastSuccess(`${resData.count || items.length} archivo(s) subido(s) con éxito`);
+
       // Reload directory files
       loadFiles(currentFolder, true);
 
@@ -177,6 +163,7 @@ export default function DocumentPortalPage() {
         message: errorMsg,
         isError: true,
       });
+      Alerts.toastError(errorMsg);
     }
   };
 
@@ -188,7 +175,7 @@ export default function DocumentPortalPage() {
         path: f.name,
       }));
       executeUpload(items);
-      e.target.value = ''; // Reset input
+      e.target.value = '';
     }
   };
 
@@ -200,7 +187,7 @@ export default function DocumentPortalPage() {
         path: f.webkitRelativePath || f.name,
       }));
       executeUpload(items);
-      e.target.value = ''; // Reset input
+      e.target.value = '';
     }
   };
 
@@ -298,23 +285,87 @@ export default function DocumentPortalPage() {
     }
   };
 
-  // Rename handlers
-  const handleOpenRenameFolder = (folder: FolderInfo) => {
-    setRenameTarget({
-      isOpen: true,
-      oldPath: folder.path,
-      initialName: folder.name,
-      isFolder: true,
-    });
+  // SweetAlert2 New Folder Action
+  const handleNewFolder = async () => {
+    const folderName = await Alerts.promptNewFolder(currentFolder);
+    if (!folderName) return;
+
+    try {
+      const res = await fetch('/api/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parentFolder: currentFolder,
+          folderName,
+        }),
+      });
+
+      if (res.ok) {
+        Alerts.toastSuccess(`Carpeta "${folderName}" creada`);
+        loadFiles(currentFolder, true);
+      } else {
+        const err = await res.json();
+        Alerts.toastError(err.error || 'No se pudo crear la carpeta');
+      }
+    } catch {
+      Alerts.toastError('Error al crear la carpeta');
+    }
   };
 
-  const handleOpenRenameFile = (file: DocumentFile) => {
-    setRenameTarget({
-      isOpen: true,
-      oldPath: file.path,
-      initialName: file.name,
-      isFolder: false,
-    });
+  // SweetAlert2 Rename Folder Action
+  const handleRenameFolder = async (folder: FolderInfo) => {
+    const newName = await Alerts.promptRename(folder.name, true);
+    if (!newName || newName === folder.name) return;
+
+    try {
+      const res = await fetch('/api/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oldPath: folder.path,
+          newName,
+          isFolder: true,
+        }),
+      });
+
+      if (res.ok) {
+        Alerts.toastSuccess(`Carpeta renombrada a "${newName}"`);
+        loadFiles(currentFolder, true);
+      } else {
+        const err = await res.json();
+        Alerts.toastError(err.error || 'No se pudo renombrar');
+      }
+    } catch {
+      Alerts.toastError('Error al renombrar');
+    }
+  };
+
+  // SweetAlert2 Rename File Action
+  const handleRenameFile = async (file: DocumentFile) => {
+    const newName = await Alerts.promptRename(file.name, false);
+    if (!newName || newName === file.name) return;
+
+    try {
+      const res = await fetch('/api/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oldPath: file.path,
+          newName,
+          isFolder: false,
+        }),
+      });
+
+      if (res.ok) {
+        Alerts.toastSuccess(`Archivo renombrado a "${newName}"`);
+        loadFiles(currentFolder, true);
+      } else {
+        const err = await res.json();
+        Alerts.toastError(err.error || 'No se pudo renombrar');
+      }
+    } catch {
+      Alerts.toastError('Error al renombrar');
+    }
   };
 
   // Filter files by search term
@@ -389,7 +440,7 @@ export default function DocumentPortalPage() {
         onOpenQr={() => setIsQrOpen(true)}
         onUploadFiles={() => fileInputRef.current?.click()}
         onUploadFolder={() => folderInputRef.current?.click()}
-        onNewFolder={() => setIsNewFolderOpen(true)}
+        onNewFolder={handleNewFolder}
         onRefresh={() => loadFiles(currentFolder, true)}
         isRefreshing={isRefreshing}
         totalFiles={data?.totalFiles || 0}
@@ -432,9 +483,9 @@ export default function DocumentPortalPage() {
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             
-            {/* New Folder Button */}
+            {/* New Folder Button (SweetAlert2) */}
             <button
-              onClick={() => setIsNewFolderOpen(true)}
+              onClick={handleNewFolder}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
             >
               <FolderPlus className="w-4 h-4 text-amber-600" />
@@ -495,7 +546,7 @@ export default function DocumentPortalPage() {
                       key={folder.path}
                       folder={folder}
                       onClick={() => handleNavigate(folder.path)}
-                      onRename={handleOpenRenameFolder}
+                      onRename={handleRenameFolder}
                       onDeleteSuccess={() => loadFiles(currentFolder, true)}
                     />
                   ))}
@@ -505,7 +556,7 @@ export default function DocumentPortalPage() {
                   <p className="text-xs text-slate-400">
                     No hay subcarpetas creadas en esta ubicación.{' '}
                     <button
-                      onClick={() => setIsNewFolderOpen(true)}
+                      onClick={handleNewFolder}
                       className="text-blue-600 hover:underline font-semibold"
                     >
                       + Crear una carpeta aquí
@@ -539,7 +590,7 @@ export default function DocumentPortalPage() {
                       key={file.id}
                       file={file}
                       onView={(f) => setViewingPdfFile(f)}
-                      onRename={handleOpenRenameFile}
+                      onRename={handleRenameFile}
                       onReplace={(f) => {
                         setReplacingTargetFile(f);
                         replaceInputRef.current?.click();
@@ -580,7 +631,7 @@ export default function DocumentPortalPage() {
                         <span>Subir Carpeta Completa</span>
                       </button>
                       <button
-                        onClick={() => setIsNewFolderOpen(true)}
+                        onClick={handleNewFolder}
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shadow-2xs"
                       >
                         <FolderPlus className="w-4 h-4 text-amber-600" />
@@ -612,22 +663,6 @@ export default function DocumentPortalPage() {
       <PdfModal
         file={viewingPdfFile}
         onClose={() => setViewingPdfFile(null)}
-      />
-
-      <NewFolderModal
-        isOpen={isNewFolderOpen}
-        onClose={() => setIsNewFolderOpen(false)}
-        currentFolder={currentFolder}
-        onSuccess={() => loadFiles(currentFolder, true)}
-      />
-
-      <RenameModal
-        isOpen={renameTarget.isOpen}
-        onClose={() => setRenameTarget((prev) => ({ ...prev, isOpen: false }))}
-        oldPath={renameTarget.oldPath}
-        initialName={renameTarget.initialName}
-        isFolder={renameTarget.isFolder}
-        onSuccess={() => loadFiles(currentFolder, true)}
       />
 
       {/* Floating Upload Progress Toast (like Google Drive) */}
