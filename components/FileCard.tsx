@@ -1,17 +1,24 @@
 'use client';
 
 import React, { useState } from 'react';
-import { FileText, Eye, Download, RefreshCw, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
+import { FileText, Eye, Download, RefreshCw, Trash2, Edit3, AlertTriangle, Loader2 } from 'lucide-react';
 import { DocumentFile } from '@/lib/types';
 
 interface FileCardProps {
   file: DocumentFile;
   onView: (file: DocumentFile) => void;
+  onRename: (file: DocumentFile) => void;
   onReplace: (file: DocumentFile) => void;
   onDeleteSuccess: () => void;
 }
 
-export function FileCard({ file, onView, onReplace, onDeleteSuccess }: FileCardProps) {
+export function FileCard({
+  file,
+  onView,
+  onRename,
+  onReplace,
+  onDeleteSuccess,
+}: FileCardProps) {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -56,7 +63,7 @@ export function FileCard({ file, onView, onReplace, onDeleteSuccess }: FileCardP
   const isPdf = file.name.toLowerCase().endsWith('.pdf');
 
   return (
-    <div className="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-3 sm:p-4 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between gap-3 relative">
+    <div className="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-3 sm:p-4 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between gap-3 relative group">
       
       {/* File Info */}
       <div className="flex items-start gap-3 min-w-0">
@@ -105,7 +112,15 @@ export function FileCard({ file, onView, onReplace, onDeleteSuccess }: FileCardP
           </a>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => onRename(file)}
+            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            title="Renombrar archivo"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+
           <button
             onClick={() => onReplace(file)}
             className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
@@ -145,7 +160,7 @@ export function FileCard({ file, onView, onReplace, onDeleteSuccess }: FileCardP
             <button
               onClick={handleDelete}
               disabled={isDeleting}
-              className="px-3 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg flex items-center gap-1"
+              className="px-3 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg flex items-center gap-1 shadow-2xs"
             >
               {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
               <span>Eliminar</span>

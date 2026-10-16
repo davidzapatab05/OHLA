@@ -8,8 +8,10 @@ import { FileCard } from '@/components/FileCard';
 import { QrModal } from '@/components/QrModal';
 import { PdfModal } from '@/components/PdfModal';
 import { UploadModal } from '@/components/UploadModal';
-import { FilesResponse, DocumentFile } from '@/lib/types';
-import { Search, FolderOpen, FileText, Upload, Sparkles, Filter, X } from 'lucide-react';
+import { NewFolderModal } from '@/components/NewFolderModal';
+import { RenameModal } from '@/components/RenameModal';
+import { FilesResponse, DocumentFile, FolderInfo } from '@/lib/types';
+import { Search, FolderOpen, FileText, Upload, FolderPlus, X } from 'lucide-react';
 
 export default function DocumentPortalPage() {
   const [currentFolder, setCurrentFolder] = useState<string>('');
@@ -21,8 +23,22 @@ export default function DocumentPortalPage() {
   // Modals state
   const [isQrOpen, setIsQrOpen] = useState<boolean>(false);
   const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
+  const [isNewFolderOpen, setIsNewFolderOpen] = useState<boolean>(false);
   const [replaceTargetFile, setReplaceTargetFile] = useState<DocumentFile | null>(null);
   const [viewingPdfFile, setViewingPdfFile] = useState<DocumentFile | null>(null);
+
+  // Rename modal state
+  const [renameTarget, setRenameTarget] = useState<{
+    isOpen: boolean;
+    oldPath: string;
+    initialName: string;
+    isFolder: boolean;
+  }>({
+    isOpen: false,
+    oldPath: '',
+    initialName: '',
+    isFolder: false,
+  });
 
   // Read initial folder from URL query if present
   useEffect(() => {
@@ -78,6 +94,24 @@ export default function DocumentPortalPage() {
     setIsUploadOpen(true);
   };
 
+  const handleOpenRenameFolder = (folder: FolderInfo) => {
+    setRenameTarget({
+      isOpen: true,
+      oldPath: folder.path,
+      initialName: folder.name,
+      isFolder: true,
+    });
+  };
+
+  const handleOpenRenameFile = (file: DocumentFile) => {
+    setRenameTarget({
+      isOpen: true,
+      oldPath: file.path,
+      initialName: file.name,
+      isFolder: false,
+    });
+  };
+
   // Filter files by search term
   const filteredFiles = useMemo(() => {
     if (!data) return [];
@@ -105,6 +139,7 @@ export default function DocumentPortalPage() {
           setReplaceTargetFile(null);
           setIsUploadOpen(true);
         }}
+        onNewFolder={() => setIsNewFolderOpen(true)}
         onRefresh={() => loadFiles(currentFolder, true)}
         isRefreshing={isRefreshing}
         totalFiles={data?.totalFiles || 0}
@@ -147,7 +182,7 @@ export default function DocumentPortalPage() {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
             <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
-            <p className="text-sm">Cargando repositorio documental...</p>
+            <p className="text-sm font-medium">Cargando explorador de archivos...</p>
           </div>
         ) : (
           <div className="space-y-8">
@@ -155,11 +190,20 @@ export default function DocumentPortalPage() {
             {/* Folders Section */}
             {filteredFolders.length > 0 && (
               <section>
-                <div className="flex items-center gap-2 mb-3">
-                  <FolderOpen className="w-4 h-4 text-amber-500" />
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                    Carpetas ({filteredFolders.length})
-                  </h3>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4 text-amber-500" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Carpetas ({filteredFolders.length})
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setIsNewFolderOpen(true)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    <span>+ Nueva Carpeta</span>
+                  </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {filteredFolders.map((folder) => (
@@ -167,6 +211,8 @@ export default function DocumentPortalPage() {
                       key={folder.path}
                       folder={folder}
                       onClick={() => handleNavigate(folder.path)}
+                      onRename={handleOpenRenameFolder}
+                      onDeleteSuccess={() => loadFiles(currentFolder, true)}
                     />
                   ))}
                 </div>
@@ -197,37 +243,47 @@ export default function DocumentPortalPage() {
                       key={file.id}
                       file={file}
                       onView={(f) => setViewingPdfFile(f)}
+                      onRename={handleOpenRenameFile}
                       onReplace={handleOpenReplace}
                       onDeleteSuccess={() => loadFiles(currentFolder, true)}
                     />
                   ))}
                 </div>
               ) : (
-                <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center flex flex-col items-center">
+                <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-8 sm:p-12 text-center flex flex-col items-center">
                   <div className="p-3 bg-slate-100 text-slate-400 rounded-full mb-3">
                     <FileText className="w-8 h-8" />
                   </div>
                   <h4 className="text-sm font-bold text-slate-800 mb-1">
                     {searchQuery
-                      ? 'No hay documentos que coincidan con la búsqueda'
-                      : 'Esta carpeta aún no tiene archivos'}
+                      ? 'No hay archivos que coincidan con la búsqueda'
+                      : 'No hay documentos en esta ubicación'}
                   </h4>
                   <p className="text-xs text-slate-500 max-w-sm mb-4">
                     {searchQuery
-                      ? 'Prueba buscando con otra palabra o código de procedimiento.'
-                      : 'Puedes subir los procedimientos correspondientes a esta categoría pulsando el botón de abajo.'}
+                      ? 'Prueba buscando con otra palabra o revisa la ortografía.'
+                      : 'Puedes crear una subcarpeta o subir nuevos archivos directamente.'}
                   </p>
                   {!searchQuery && (
-                    <button
-                      onClick={() => {
-                        setReplaceTargetFile(null);
-                        setIsUploadOpen(true);
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs"
-                    >
-                      <Upload className="w-4 h-4" />
-                      <span>Subir Primer Documento</span>
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setIsNewFolderOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shadow-2xs"
+                      >
+                        <FolderPlus className="w-4 h-4 text-amber-600" />
+                        <span>Nueva Carpeta</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setReplaceTargetFile(null);
+                          setIsUploadOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>Subir Archivo</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -261,6 +317,22 @@ export default function DocumentPortalPage() {
         currentFolder={currentFolder}
         replaceTargetName={replaceTargetFile?.name}
         onUploadSuccess={() => loadFiles(currentFolder, true)}
+      />
+
+      <NewFolderModal
+        isOpen={isNewFolderOpen}
+        onClose={() => setIsNewFolderOpen(false)}
+        currentFolder={currentFolder}
+        onSuccess={() => loadFiles(currentFolder, true)}
+      />
+
+      <RenameModal
+        isOpen={renameTarget.isOpen}
+        onClose={() => setRenameTarget((prev) => ({ ...prev, isOpen: false }))}
+        oldPath={renameTarget.oldPath}
+        initialName={renameTarget.initialName}
+        isFolder={renameTarget.isFolder}
+        onSuccess={() => loadFiles(currentFolder, true)}
       />
     </div>
   );

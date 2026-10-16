@@ -42,6 +42,15 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
 
       for (const blob of blobs) {
         const fullPath = blob.pathname.replace(/^\/+/, '');
+        // Ignore .keep placeholder files
+        if (fullPath.endsWith('/.keep') || fullPath === '.keep') {
+          const folderOnly = fullPath.replace(/\/\.keep$/, '');
+          if (folderOnly && !folderMap.has(folderOnly)) {
+            folderMap.set(folderOnly, 0);
+          }
+          continue;
+        }
+
         const segments = fullPath.split('/');
         const fileName = segments[segments.length - 1];
         const fileFolder = segments.slice(0, -1).join('/');
@@ -80,8 +89,8 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
       folders.sort((a, b) => a.name.localeCompare(b.name));
       files.sort((a, b) => a.name.localeCompare(b.name));
 
-      const totalFiles = blobs.length;
-      const totalSize = blobs.reduce((acc, b) => acc + b.size, 0);
+      const totalFiles = blobs.filter((b) => !b.pathname.endsWith('.keep')).length;
+      const totalSize = blobs.reduce((acc, b) => acc + (b.pathname.endsWith('.keep') ? 0 : b.size), 0);
 
       return {
         currentFolder: normalizedPath,
@@ -107,6 +116,7 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
   const files: DocumentFile[] = [];
 
   for (const entry of entries) {
+    if (entry.name === '.keep') continue;
     const entryFullPath = path.join(targetDir, entry.name);
     const entryRelativePath = normalizedPath ? `${normalizedPath}/${entry.name}` : entry.name;
 
@@ -117,7 +127,7 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
         const countFiles = async (dir: string) => {
           const items = await fs.readdir(dir, { withFileTypes: true });
           for (const item of items) {
-            if (item.isFile()) count++;
+            if (item.isFile() && item.name !== '.keep') count++;
             else if (item.isDirectory()) await countFiles(path.join(dir, item.name));
           }
         };
@@ -153,6 +163,7 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
     try {
       const items = await fs.readdir(dir, { withFileTypes: true });
       for (const item of items) {
+        if (item.name === '.keep') continue;
         const full = path.join(dir, item.name);
         if (item.isFile()) {
           allFilesCount++;
@@ -180,6 +191,107 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
     totalSize: allFilesSize,
     isUsingBlob: false
   };
+}
+
+export async function createFolder(parentFolder: string, folderName: string): Promise<boolean> {
+  const cleanParent = parentFolder.replace(/^\/+|\/+$/g, '');
+  const cleanName = folderName.replace(/[/\\?%*:|"<>]/g, '-').trim();
+  if (!cleanName) return false;
+
+  const targetPath = cleanParent ? `${cleanParent}/${cleanName}` : cleanName;
+
+  if (hasBlobConfigured()) {
+    // Put a placeholder blob to represent the folder in object storage
+    await put(`${targetPath}/.keep`, Buffer.from(''), {
+      access: 'public',
+      addRandomSuffix: false,
+    });
+    return true;
+  }
+
+  // Local storage
+  const localTarget = path.join(STORAGE_DIR, ...targetPath.split('/'));
+  await ensureDir(localTarget);
+  return true;
+}
+
+export async function deleteFolder(folderPath: string): Promise<boolean> {
+  const cleanPath = folderPath.replace(/^\/+|\/+$/g, '');
+  if (!cleanPath) return false;
+
+  if (hasBlobConfigured()) {
+    const { blobs } = await list();
+    const urlsToDelete = blobs
+      .filter((b) => b.pathname.startsWith(`${cleanPath}/`) || b.pathname === cleanPath)
+      .map((b) => b.url);
+    if (urlsToDelete.length > 0) {
+      await del(urlsToDelete);
+    }
+    return true;
+  }
+
+  // Local storage
+  try {
+    const localTarget = path.join(STORAGE_DIR, ...cleanPath.split('/'));
+    await fs.rm(localTarget, { recursive: true, force: true });
+    return true;
+  } catch (err) {
+    console.error('Error deleting folder:', err);
+    return false;
+  }
+}
+
+export async function renameItem(
+  oldPath: string,
+  newName: string,
+  isFolder: boolean
+): Promise<boolean> {
+  const cleanOld = oldPath.replace(/^\/+|\/+$/g, '');
+  const cleanNewName = newName.replace(/[/\\?%*:|"<>]/g, '-').trim();
+  if (!cleanOld || !cleanNewName) return false;
+
+  if (hasBlobConfigured()) {
+    const { blobs } = await list();
+    if (isFolder) {
+      const oldPrefix = `${cleanOld}/`;
+      const parent = cleanOld.split('/').slice(0, -1).join('/');
+      const newPrefix = parent ? `${parent}/${cleanNewName}/` : `${cleanNewName}/`;
+
+      const matches = blobs.filter((b) => b.pathname.startsWith(oldPrefix));
+      for (const blob of matches) {
+        const newPathname = blob.pathname.replace(oldPrefix, newPrefix);
+        const res = await fetch(blob.url);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        await put(newPathname, buffer, { access: 'public', addRandomSuffix: false });
+        await del(blob.url);
+      }
+      return true;
+    } else {
+      const parent = cleanOld.split('/').slice(0, -1).join('/');
+      const newPathname = parent ? `${parent}/${cleanNewName}` : cleanNewName;
+      const targetBlob = blobs.find((b) => b.pathname === cleanOld);
+      if (targetBlob) {
+        const res = await fetch(targetBlob.url);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        await put(newPathname, buffer, { access: 'public', addRandomSuffix: false });
+        await del(targetBlob.url);
+        return true;
+      }
+      return false;
+    }
+  }
+
+  // Local storage
+  try {
+    const oldLocal = path.join(STORAGE_DIR, ...cleanOld.split('/'));
+    const parentDir = path.dirname(oldLocal);
+    const newLocal = path.join(parentDir, cleanNewName);
+    await fs.rename(oldLocal, newLocal);
+    return true;
+  } catch (err) {
+    console.error('Error renaming item:', err);
+    return false;
+  }
 }
 
 export async function uploadFile(
