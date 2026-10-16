@@ -6,10 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "sync-blob": "node scripts/sync-to-blob.mjs",
     "lint": "eslint"
   },
   "dependencies": {
+    "@types/qrcode.react": "^3.0.0",
+    "@vercel/blob": "^2.8.2",
+    "lucide-react": "^1.58.0",
     "next": "16.4.2",
+    "qrcode.react": "^4.2.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
