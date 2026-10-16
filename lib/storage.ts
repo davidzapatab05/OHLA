@@ -5,8 +5,18 @@ import { DocumentFile, FolderInfo, FilesResponse } from './types';
 
 const STORAGE_DIR = path.join(process.cwd(), 'public', 'storage');
 
+export function getBlobToken(): string | undefined {
+  if (process.env.BLOB_READ_WRITE_TOKEN) return process.env.BLOB_READ_WRITE_TOKEN;
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.includes('BLOB') && key.includes('TOKEN') && value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 export function hasBlobConfigured(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return Boolean(getBlobToken());
 }
 
 // Ensure the local storage directory exists
@@ -82,9 +92,10 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
   }
 
   // 2. Read Vercel Blob files if configured
-  if (hasBlobConfigured()) {
+  const token = getBlobToken();
+  if (token) {
     try {
-      const { blobs } = await list();
+      const { blobs } = await list({ token });
       isUsingBlob = true;
 
       for (const blob of blobs) {
@@ -153,14 +164,24 @@ export async function createFolder(parentFolder: string, folderName: string): Pr
   if (!cleanName) return false;
 
   const targetPath = cleanParent ? `${cleanParent}/${cleanName}` : cleanName;
+  const token = getBlobToken();
 
-  if (hasBlobConfigured()) {
-    // Put a placeholder blob to represent the folder in object storage
-    await put(`${targetPath}/.keep`, Buffer.from(''), {
-      access: 'public',
-      addRandomSuffix: false,
-    });
-    return true;
+  if (token) {
+    try {
+      await put(`${targetPath}/.keep`, Buffer.from(''), {
+        access: 'public',
+        addRandomSuffix: false,
+        token
+      });
+      return true;
+    } catch {
+      await put(`${targetPath}/.keep`, Buffer.from(''), {
+        access: 'private',
+        addRandomSuffix: false,
+        token
+      });
+      return true;
+    }
   }
 
   // Local storage
@@ -172,14 +193,15 @@ export async function createFolder(parentFolder: string, folderName: string): Pr
 export async function deleteFolder(folderPath: string): Promise<boolean> {
   const cleanPath = folderPath.replace(/^\/+|\/+$/g, '');
   if (!cleanPath) return false;
+  const token = getBlobToken();
 
-  if (hasBlobConfigured()) {
-    const { blobs } = await list();
+  if (token) {
+    const { blobs } = await list({ token });
     const urlsToDelete = blobs
       .filter((b) => b.pathname.startsWith(`${cleanPath}/`) || b.pathname === cleanPath)
       .map((b) => b.url);
     if (urlsToDelete.length > 0) {
-      await del(urlsToDelete);
+      await del(urlsToDelete, { token });
     }
     return true;
   }
@@ -203,9 +225,10 @@ export async function renameItem(
   const cleanOld = oldPath.replace(/^\/+|\/+$/g, '');
   const cleanNewName = newName.replace(/[/\\?%*:|"<>]/g, '-').trim();
   if (!cleanOld || !cleanNewName) return false;
+  const token = getBlobToken();
 
-  if (hasBlobConfigured()) {
-    const { blobs } = await list();
+  if (token) {
+    const { blobs } = await list({ token });
     if (isFolder) {
       const oldPrefix = `${cleanOld}/`;
       const parent = cleanOld.split('/').slice(0, -1).join('/');
@@ -216,8 +239,12 @@ export async function renameItem(
         const newPathname = blob.pathname.replace(oldPrefix, newPrefix);
         const res = await fetch(blob.url);
         const buffer = Buffer.from(await res.arrayBuffer());
-        await put(newPathname, buffer, { access: 'public', addRandomSuffix: false });
-        await del(blob.url);
+        try {
+          await put(newPathname, buffer, { access: 'public', addRandomSuffix: false, token });
+        } catch {
+          await put(newPathname, buffer, { access: 'private', addRandomSuffix: false, token });
+        }
+        await del(blob.url, { token });
       }
       return true;
     } else {
@@ -227,8 +254,12 @@ export async function renameItem(
       if (targetBlob) {
         const res = await fetch(targetBlob.url);
         const buffer = Buffer.from(await res.arrayBuffer());
-        await put(newPathname, buffer, { access: 'public', addRandomSuffix: false });
-        await del(targetBlob.url);
+        try {
+          await put(newPathname, buffer, { access: 'public', addRandomSuffix: false, token });
+        } catch {
+          await put(newPathname, buffer, { access: 'private', addRandomSuffix: false, token });
+        }
+        await del(targetBlob.url, { token });
         return true;
       }
       return false;
@@ -256,13 +287,31 @@ export async function uploadFile(
   const cleanFolder = folderPath.replace(/^\/+|\/+$/g, '');
   const cleanFileName = fileName.replace(/[/\\?%*:|"<>]/g, '-');
   const fullPath = cleanFolder ? `${cleanFolder}/${cleanFileName}` : cleanFileName;
+  const token = getBlobToken();
 
-  if (hasBlobConfigured()) {
-    const blob = await put(fullPath, buffer, {
-      access: 'public',
-      addRandomSuffix: false // Overwrites if file exists with same name!
-    });
-    return { success: true, url: blob.url, pathname: blob.pathname };
+  if (token) {
+    try {
+      const blob = await put(fullPath, buffer, {
+        access: 'public',
+        addRandomSuffix: false,
+        token
+      });
+      return { success: true, url: blob.url, pathname: blob.pathname };
+    } catch (err: any) {
+      if (
+        err?.message?.includes('private') ||
+        err?.message?.includes('Access denied') ||
+        err?.message?.includes('store does not allow')
+      ) {
+        const blob = await put(fullPath, buffer, {
+          access: 'private',
+          addRandomSuffix: false,
+          token
+        });
+        return { success: true, url: blob.url, pathname: blob.pathname };
+      }
+      throw err;
+    }
   }
 
   // If running on Vercel without Blob configured
@@ -282,9 +331,10 @@ export async function uploadFile(
 }
 
 export async function deleteFile(filePathOrUrl: string): Promise<boolean> {
-  if (hasBlobConfigured() && (filePathOrUrl.startsWith('http://') || filePathOrUrl.startsWith('https://'))) {
+  const token = getBlobToken();
+  if (token && (filePathOrUrl.startsWith('http://') || filePathOrUrl.startsWith('https://'))) {
     try {
-      await del(filePathOrUrl);
+      await del(filePathOrUrl, { token });
       return true;
     } catch (e) {
       console.error('Error deleting blob:', e);
