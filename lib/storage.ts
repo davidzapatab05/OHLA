@@ -7,8 +7,11 @@ const STORAGE_DIR = path.join(process.cwd(), 'public', 'storage');
 
 export function getBlobToken(): string | undefined {
   if (process.env.BLOB_READ_WRITE_TOKEN) return process.env.BLOB_READ_WRITE_TOKEN;
+  if (process.env.OHLA_BLOB_READ_WRITE_TOKEN) return process.env.OHLA_BLOB_READ_WRITE_TOKEN;
+  if (process.env.STORAGE_BLOB_READ_WRITE_TOKEN) return process.env.STORAGE_BLOB_READ_WRITE_TOKEN;
+  if (process.env.VERCEL_BLOB_READ_WRITE_TOKEN) return process.env.VERCEL_BLOB_READ_WRITE_TOKEN;
   for (const [key, value] of Object.entries(process.env)) {
-    if (key.includes('BLOB') && key.includes('TOKEN') && value) {
+    if (key.toUpperCase().includes('BLOB') && key.toUpperCase().includes('TOKEN') && value) {
       return value;
     }
   }
