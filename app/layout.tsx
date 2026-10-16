@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OHLA - Portal Documental | PETS & Procedimientos",
-  description: "Acceso rápido y gestión de documentos técnicos, PETS y procedimientos de ensayo OHLA",
+  title: "OHLA - Documentos",
+  description: "Repositorio de documentos OHLA",
   icons: {
     icon: "/logo.jpg",
   },

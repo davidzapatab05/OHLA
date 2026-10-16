@@ -57,7 +57,7 @@ export function Navbar({
                 </span>
               </div>
               <h1 className="text-sm sm:text-base font-bold text-slate-900 truncate">
-                Explorador de Archivos & PETS
+                Documentos
               </h1>
             </div>
           </div>

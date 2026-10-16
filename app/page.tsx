@@ -182,29 +182,30 @@ export default function DocumentPortalPage() {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
             <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
-            <p className="text-sm font-medium">Cargando explorador de archivos...</p>
+            <p className="text-sm font-medium">Cargando documentos...</p>
           </div>
         ) : (
           <div className="space-y-8">
             
             {/* Folders Section */}
-            {filteredFolders.length > 0 && (
-              <section>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <FolderOpen className="w-4 h-4 text-amber-500" />
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                      Carpetas ({filteredFolders.length})
-                    </h3>
-                  </div>
-                  <button
-                    onClick={() => setIsNewFolderOpen(true)}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
-                  >
-                    <FolderPlus className="w-3.5 h-3.5" />
-                    <span>+ Nueva Carpeta</span>
-                  </button>
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="w-4 h-4 text-amber-500" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Carpetas {filteredFolders.length > 0 ? `(${filteredFolders.length})` : ''}
+                  </h3>
                 </div>
+                <button
+                  onClick={() => setIsNewFolderOpen(true)}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 bg-blue-50/70 hover:bg-blue-100/70 px-2.5 py-1 rounded-lg transition-colors border border-blue-200"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>+ Crear Carpeta aquí</span>
+                </button>
+              </div>
+
+              {filteredFolders.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {filteredFolders.map((folder) => (
                     <FolderCard
@@ -216,8 +217,20 @@ export default function DocumentPortalPage() {
                     />
                   ))}
                 </div>
-              </section>
-            )}
+              ) : (
+                <div className="bg-white/60 border border-dashed border-slate-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-slate-400">
+                    No hay subcarpetas creadas en esta ubicación.{' '}
+                    <button
+                      onClick={() => setIsNewFolderOpen(true)}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      Crear una carpeta
+                    </button>
+                  </p>
+                </div>
+              )}
+            </section>
 
             {/* Files Section */}
             <section>
@@ -296,7 +309,7 @@ export default function DocumentPortalPage() {
 
       {/* Footer */}
       <footer className="mt-auto border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
-        <p>OHLA © Repositorio Digital de PETS y Procedimientos de Operación</p>
+        <p>OHLA © Repositorio de Documentos</p>
       </footer>
 
       {/* Modals */}
