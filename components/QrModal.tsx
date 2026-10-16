@@ -16,7 +16,10 @@ export function QrModal({ isOpen, onClose, currentFolder }: QrModalProps) {
   const qrRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const base = 'https://ohla.vercel.app';
+    let base = 'https://ohla-davids-projects-c910740a.vercel.app';
+    if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')) {
+      base = window.location.origin;
+    }
     const url = currentFolder ? `${base}/?folder=${encodeURIComponent(currentFolder)}` : base;
     setCurrentUrl(url);
   }, [currentFolder, isOpen]);
