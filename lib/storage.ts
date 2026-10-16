@@ -33,16 +33,62 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
     }
   }
 
-  // 1. If Vercel Blob is configured and has items
+  // 1. Fetch from Local Storage and Vercel Blob simultaneously to merge
+  const filesMap = new Map<string, DocumentFile>();
+  const folderMap = new Map<string, number>();
+  let isUsingBlob = false;
+
+  // Read local files bundled with deployment (e.g. PETS, PROCEDIMIENTOS)
+  try {
+    const targetDir = normalizedPath ? path.join(STORAGE_DIR, ...normalizedPath.split('/')) : STORAGE_DIR;
+    const entries = await fs.readdir(targetDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (entry.name === '.keep') continue;
+      const entryFullPath = path.join(targetDir, entry.name);
+      const entryRelativePath = normalizedPath ? `${normalizedPath}/${entry.name}` : entry.name;
+
+      if (entry.isDirectory()) {
+        let count = 0;
+        try {
+          const countFiles = async (dir: string) => {
+            const items = await fs.readdir(dir, { withFileTypes: true });
+            for (const item of items) {
+              if (item.isFile() && item.name !== '.keep') count++;
+              else if (item.isDirectory()) await countFiles(path.join(dir, item.name));
+            }
+          };
+          await countFiles(entryFullPath);
+        } catch {
+          // ignore
+        }
+        folderMap.set(entryRelativePath, count);
+      } else if (entry.isFile()) {
+        const stats = await fs.stat(entryFullPath);
+        filesMap.set(entryRelativePath, {
+          id: entryRelativePath,
+          name: entry.name,
+          path: entryRelativePath,
+          folder: normalizedPath,
+          url: `/storage/${entryRelativePath.split('/').map(encodeURIComponent).join('/')}`,
+          size: stats.size,
+          updatedAt: stats.mtime.toISOString(),
+          source: 'local'
+        });
+      }
+    }
+  } catch {
+    // Local directory might not exist for newly created cloud folders
+  }
+
+  // 2. Read Vercel Blob files if configured
   if (hasBlobConfigured()) {
     try {
       const { blobs } = await list();
-      const files: DocumentFile[] = [];
-      const folderMap = new Map<string, number>();
+      isUsingBlob = true;
 
       for (const blob of blobs) {
         const fullPath = blob.pathname.replace(/^\/+/, '');
-        // Ignore .keep placeholder files
         if (fullPath.endsWith('/.keep') || fullPath === '.keep') {
           const folderOnly = fullPath.replace(/\/\.keep$/, '');
           if (folderOnly && !folderMap.has(folderOnly)) {
@@ -55,11 +101,9 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
         const fileName = segments[segments.length - 1];
         const fileFolder = segments.slice(0, -1).join('/');
 
-        // Determine if this file is directly inside normalizedPath or in a subfolder
         if (normalizedPath === '' || fileFolder === normalizedPath || fileFolder.startsWith(normalizedPath + '/')) {
           if (fileFolder === normalizedPath) {
-            // Direct child file
-            files.push({
+            filesMap.set(fullPath, {
               id: blob.url,
               name: fileName,
               path: fullPath,
@@ -70,7 +114,6 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
               source: 'blob'
             });
           } else {
-            // It's in a subfolder of normalizedPath
             const subPathRelative = normalizedPath ? fileFolder.substring(normalizedPath.length + 1) : fileFolder;
             const directSubfolderName = subPathRelative.split('/')[0];
             const directSubfolderPath = normalizedPath ? `${normalizedPath}/${directSubfolderName}` : directSubfolderName;
@@ -78,107 +121,18 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
           }
         }
       }
-
-      const folders: FolderInfo[] = Array.from(folderMap.entries()).map(([fPath, count]) => ({
-        name: fPath.split('/').pop() || fPath,
-        path: fPath,
-        fileCount: count
-      }));
-
-      // Sort
-      folders.sort((a, b) => a.name.localeCompare(b.name));
-      files.sort((a, b) => a.name.localeCompare(b.name));
-
-      const totalFiles = blobs.filter((b) => !b.pathname.endsWith('.keep')).length;
-      const totalSize = blobs.reduce((acc, b) => acc + (b.pathname.endsWith('.keep') ? 0 : b.size), 0);
-
-      return {
-        currentFolder: normalizedPath,
-        breadcrumbs,
-        folders,
-        files,
-        totalFiles,
-        totalSize,
-        isUsingBlob: true
-      };
     } catch (err) {
-      console.warn('Vercel Blob failed, falling back to local files:', err);
+      console.warn('Vercel Blob failed, using local files:', err);
     }
   }
 
-  // 2. Local File System fallback
-  await ensureDir(STORAGE_DIR);
-  const targetDir = normalizedPath ? path.join(STORAGE_DIR, ...normalizedPath.split('/')) : STORAGE_DIR;
-  await ensureDir(targetDir);
+  const folders: FolderInfo[] = Array.from(folderMap.entries()).map(([fPath, count]) => ({
+    name: fPath.split('/').pop() || fPath,
+    path: fPath,
+    fileCount: count
+  }));
 
-  const entries = await fs.readdir(targetDir, { withFileTypes: true });
-  const folders: FolderInfo[] = [];
-  const files: DocumentFile[] = [];
-
-  for (const entry of entries) {
-    if (entry.name === '.keep') continue;
-    const entryFullPath = path.join(targetDir, entry.name);
-    const entryRelativePath = normalizedPath ? `${normalizedPath}/${entry.name}` : entry.name;
-
-    if (entry.isDirectory()) {
-      // Count files inside recursively
-      let count = 0;
-      try {
-        const countFiles = async (dir: string) => {
-          const items = await fs.readdir(dir, { withFileTypes: true });
-          for (const item of items) {
-            if (item.isFile() && item.name !== '.keep') count++;
-            else if (item.isDirectory()) await countFiles(path.join(dir, item.name));
-          }
-        };
-        await countFiles(entryFullPath);
-      } catch {
-        // ignore
-      }
-
-      folders.push({
-        name: entry.name,
-        path: entryRelativePath,
-        fileCount: count
-      });
-    } else if (entry.isFile()) {
-      const stats = await fs.stat(entryFullPath);
-      files.push({
-        id: entryRelativePath,
-        name: entry.name,
-        path: entryRelativePath,
-        folder: normalizedPath,
-        url: `/storage/${entryRelativePath.split('/').map(encodeURIComponent).join('/')}`,
-        size: stats.size,
-        updatedAt: stats.mtime.toISOString(),
-        source: 'local'
-      });
-    }
-  }
-
-  // Calculate overall total
-  let allFilesCount = 0;
-  let allFilesSize = 0;
-  const calculateTotal = async (dir: string) => {
-    try {
-      const items = await fs.readdir(dir, { withFileTypes: true });
-      for (const item of items) {
-        if (item.name === '.keep') continue;
-        const full = path.join(dir, item.name);
-        if (item.isFile()) {
-          allFilesCount++;
-          const st = await fs.stat(full);
-          allFilesSize += st.size;
-        } else if (item.isDirectory()) {
-          await calculateTotal(full);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  };
-  await calculateTotal(STORAGE_DIR);
-
+  const files = Array.from(filesMap.values());
   folders.sort((a, b) => a.name.localeCompare(b.name));
   files.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -187,9 +141,9 @@ export async function getFilesAndFolders(currentPath: string = ''): Promise<File
     breadcrumbs,
     folders,
     files,
-    totalFiles: allFilesCount,
-    totalSize: allFilesSize,
-    isUsingBlob: false
+    totalFiles: files.length,
+    totalSize: files.reduce((acc, f) => acc + f.size, 0),
+    isUsingBlob
   };
 }
 
@@ -309,6 +263,11 @@ export async function uploadFile(
       addRandomSuffix: false // Overwrites if file exists with same name!
     });
     return { success: true, url: blob.url, pathname: blob.pathname };
+  }
+
+  // If running on Vercel without Blob configured
+  if (process.env.VERCEL === '1') {
+    throw new Error('BLOB_NOT_CONFIGURED: Debes activar Vercel Blob en la pestaña Storage del panel de Vercel.');
   }
 
   // Local fallback

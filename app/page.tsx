@@ -435,12 +435,9 @@ export default function DocumentPortalPage() {
         </div>
       )}
 
-      {/* Top Navbar */}
+      {/* Top Navbar (Clean & Elegant) */}
       <Navbar
         onOpenQr={() => setIsQrOpen(true)}
-        onUploadFiles={() => fileInputRef.current?.click()}
-        onUploadFolder={() => folderInputRef.current?.click()}
-        onNewFolder={handleNewFolder}
         onRefresh={() => loadFiles(currentFolder, true)}
         isRefreshing={isRefreshing}
         totalFiles={data?.totalFiles || 0}
@@ -449,24 +446,24 @@ export default function DocumentPortalPage() {
       />
 
       {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
         
-        {/* Navigation & Search */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+        {/* Navigation & Search Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <Breadcrumbs
             items={data?.breadcrumbs || [{ name: 'Inicio', path: '' }]}
             onNavigate={handleNavigate}
           />
 
           {/* Search box */}
-          <div className="relative w-full md:w-80 shrink-0">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <div className="relative w-full sm:w-72 shrink-0">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar por código o nombre..."
-              className="w-full text-xs sm:text-sm pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-lg shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full text-xs sm:text-sm pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             />
             {searchQuery && (
               <button
@@ -479,41 +476,41 @@ export default function DocumentPortalPage() {
           </div>
         </div>
 
-        {/* Real Explorer Toolbar */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs mb-6 flex flex-wrap items-center justify-between gap-3">
+        {/* Unified Action Toolbar */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-2xs mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             
-            {/* New Folder Button (SweetAlert2) */}
-            <button
-              onClick={handleNewFolder}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
-            >
-              <FolderPlus className="w-4 h-4 text-amber-600" />
-              <span>Nueva Carpeta</span>
-            </button>
-
-            {/* Direct Upload Files Button (No modal, opens OS dialog directly) */}
+            {/* Primary Upload Files Button */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-semibold shadow-xs transition-all"
             >
               <Files className="w-4 h-4" />
               <span>Subir Archivos</span>
             </button>
 
-            {/* Direct Upload Folder Button (No modal, opens OS folder dialog directly) */}
+            {/* Upload Folder Button */}
             <button
               onClick={() => folderInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-semibold shadow-xs transition-all"
             >
               <FolderUp className="w-4 h-4" />
-              <span>Subir Carpeta Completa</span>
+              <span>Subir Carpeta</span>
+            </button>
+
+            {/* New Folder Button */}
+            <button
+              onClick={handleNewFolder}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold shadow-2xs transition-all"
+            >
+              <FolderPlus className="w-4 h-4 text-amber-600" />
+              <span>Nueva Carpeta</span>
             </button>
           </div>
 
           <div className="text-xs text-slate-500 font-medium">
-            Ubicación actual:{' '}
-            <strong className="text-slate-800 font-mono bg-slate-100 px-2 py-0.5 rounded">
+            Ubicación:{' '}
+            <strong className="text-slate-800 font-mono bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
               {currentFolder ? `/${currentFolder}` : 'Raíz (/)'}
             </strong>
           </div>
@@ -526,21 +523,19 @@ export default function DocumentPortalPage() {
             <p className="text-sm font-medium">Cargando documentos...</p>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-6">
             
-            {/* Folders Section */}
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
+            {/* Folders Section - Only shown when folders exist */}
+            {filteredFolders.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-3">
                   <FolderOpen className="w-4 h-4 text-amber-500" />
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                    Carpetas {filteredFolders.length > 0 ? `(${filteredFolders.length})` : ''}
+                    Carpetas ({filteredFolders.length})
                   </h3>
                 </div>
-              </div>
 
-              {filteredFolders.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   {filteredFolders.map((folder) => (
                     <FolderCard
                       key={folder.path}
@@ -551,95 +546,78 @@ export default function DocumentPortalPage() {
                     />
                   ))}
                 </div>
-              ) : (
-                <div className="bg-white/60 border border-dashed border-slate-200 rounded-xl p-4 text-center">
-                  <p className="text-xs text-slate-400">
-                    No hay subcarpetas creadas en esta ubicación.{' '}
-                    <button
-                      onClick={handleNewFolder}
-                      className="text-blue-600 hover:underline font-semibold"
-                    >
-                      + Crear una carpeta aquí
-                    </button>
-                  </p>
-                </div>
-              )}
-            </section>
+              </section>
+            )}
 
-            {/* Files Section */}
+            {/* Documents Section */}
             <section>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                    Documentos ({filteredFiles.length})
-                  </h3>
-                </div>
-
-                {searchQuery && (
-                  <span className="text-xs text-slate-500">
-                    Filtrado por: <strong className="text-slate-800">"{searchQuery}"</strong>
-                  </span>
-                )}
-              </div>
-
               {filteredFiles.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {filteredFiles.map((file) => (
-                    <FileCard
-                      key={file.id}
-                      file={file}
-                      onView={(f) => setViewingPdfFile(f)}
-                      onRename={handleRenameFile}
-                      onReplace={(f) => {
-                        setReplacingTargetFile(f);
-                        replaceInputRef.current?.click();
-                      }}
-                      onDeleteSuccess={() => loadFiles(currentFolder, true)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-8 sm:p-12 text-center flex flex-col items-center">
-                  <div className="p-3 bg-slate-100 text-slate-400 rounded-full mb-3">
-                    <FileText className="w-8 h-8" />
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                        Documentos ({filteredFiles.length})
+                      </h3>
+                    </div>
+
+                    {searchQuery && (
+                      <span className="text-xs text-slate-500">
+                        Filtrado por: <strong className="text-slate-800">"{searchQuery}"</strong>
+                      </span>
+                    )}
                   </div>
-                  <h4 className="text-sm font-bold text-slate-800 mb-1">
-                    {searchQuery
-                      ? 'No hay archivos que coincidan con la búsqueda'
-                      : 'Esta ubicación no tiene archivos'}
-                  </h4>
-                  <p className="text-xs text-slate-500 max-w-sm mb-4">
-                    {searchQuery
-                      ? 'Prueba buscando con otra palabra o revisa la ortografía.'
-                      : 'Puedes arrastrar archivos o carpetas directamente desde Windows a esta ventana, o usar los botones de abajo.'}
-                  </p>
-                  {!searchQuery && (
-                    <div className="flex flex-wrap items-center justify-center gap-2.5">
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {filteredFiles.map((file) => (
+                      <FileCard
+                        key={file.id}
+                        file={file}
+                        onView={(f) => {
+                          if (f.name.toLowerCase().endsWith('.pdf')) {
+                            setViewingPdfFile(f);
+                          } else {
+                            window.open(f.url, '_blank');
+                          }
+                        }}
+                        onRename={handleRenameFile}
+                        onReplace={(f) => {
+                          setReplacingTargetFile(f);
+                          replaceInputRef.current?.click();
+                        }}
+                        onDeleteSuccess={() => loadFiles(currentFolder, true)}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                /* Only show empty state if both folders and files are empty, or during search */
+                (filteredFolders.length === 0 || searchQuery) && (
+                  <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-8 sm:p-12 text-center flex flex-col items-center">
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-full mb-3">
+                      <Files className="w-7 h-7" />
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-800 mb-1">
+                      {searchQuery
+                        ? 'No se encontraron resultados'
+                        : 'Esta ubicación no tiene archivos'}
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-sm mb-4">
+                      {searchQuery
+                        ? 'Prueba con otra palabra clave.'
+                        : 'Puedes arrastrar archivos o carpetas directamente a esta ventana.'}
+                    </p>
+                    {!searchQuery && (
                       <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs"
                       >
                         <Files className="w-4 h-4" />
                         <span>Subir Archivos</span>
                       </button>
-                      <button
-                        onClick={() => folderInputRef.current?.click()}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs"
-                      >
-                        <FolderUp className="w-4 h-4" />
-                        <span>Subir Carpeta Completa</span>
-                      </button>
-                      <button
-                        onClick={handleNewFolder}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shadow-2xs"
-                      >
-                        <FolderPlus className="w-4 h-4 text-amber-600" />
-                        <span>Nueva Carpeta</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )
               )}
             </section>
 

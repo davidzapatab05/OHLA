@@ -46,8 +46,11 @@ export async function POST(request: NextRequest) {
       count: uploaded.length,
       uploaded,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error uploading file(s):', error);
-    return NextResponse.json({ error: 'Error al subir los archivos' }, { status: 500 });
+    const msg = error?.message?.includes('BLOB_NOT_CONFIGURED')
+      ? 'Para almacenar archivos en Vercel debes activar Vercel Blob en la pestaña Storage de tu proyecto.'
+      : 'Error al subir los archivos';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
