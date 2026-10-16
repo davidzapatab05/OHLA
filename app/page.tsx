@@ -1,17 +1,32 @@
 'use client';
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { Breadcrumbs } from '@/components/Breadcrumbs';
 import { FolderCard } from '@/components/FolderCard';
 import { FileCard } from '@/components/FileCard';
 import { QrModal } from '@/components/QrModal';
 import { PdfModal } from '@/components/PdfModal';
-import { UploadModal } from '@/components/UploadModal';
 import { NewFolderModal } from '@/components/NewFolderModal';
 import { RenameModal } from '@/components/RenameModal';
+import { UploadToast, UploadStatus } from '@/components/UploadToast';
 import { FilesResponse, DocumentFile, FolderInfo } from '@/lib/types';
-import { Search, FolderOpen, FileText, Upload, FolderPlus, X } from 'lucide-react';
+import {
+  Search,
+  FolderOpen,
+  FileText,
+  Upload,
+  FolderPlus,
+  FolderUp,
+  Files,
+  X,
+  ArrowDownToLine,
+} from 'lucide-react';
+
+interface FileUploadItem {
+  file: File;
+  path: string;
+}
 
 export default function DocumentPortalPage() {
   const [currentFolder, setCurrentFolder] = useState<string>('');
@@ -19,13 +34,22 @@ export default function DocumentPortalPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  
+
   // Modals state
   const [isQrOpen, setIsQrOpen] = useState<boolean>(false);
-  const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
   const [isNewFolderOpen, setIsNewFolderOpen] = useState<boolean>(false);
-  const [replaceTargetFile, setReplaceTargetFile] = useState<DocumentFile | null>(null);
   const [viewingPdfFile, setViewingPdfFile] = useState<DocumentFile | null>(null);
+  const [replacingTargetFile, setReplacingTargetFile] = useState<DocumentFile | null>(null);
+
+  // Upload feedback state (floating toast like Google Drive)
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState<boolean>(false);
+  const dragCounterRef = useRef<number>(0);
+
+  // Hidden native inputs for instant OS file dialogs
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   // Rename modal state
   const [renameTarget, setRenameTarget] = useState<{
@@ -89,11 +113,192 @@ export default function DocumentPortalPage() {
     }
   };
 
-  const handleOpenReplace = (file: DocumentFile) => {
-    setReplaceTargetFile(file);
-    setIsUploadOpen(true);
+  // Direct, instant upload execution into the current folder
+  const executeUpload = async (items: FileUploadItem[], overrideFileName?: string) => {
+    if (!items || items.length === 0) return;
+
+    setUploadStatus({
+      isUploading: true,
+      progress: 20,
+      totalFiles: items.length,
+      message: `Subiendo ${items.length} elemento(s) a /${currentFolder || 'Raíz'}...`,
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append('folder', currentFolder);
+
+      if (overrideFileName && items.length === 1) {
+        const renamed = new File([items[0].file], overrideFileName, { type: items[0].file.type });
+        formData.append('files', renamed);
+        formData.append('paths', overrideFileName);
+      } else {
+        items.forEach((it) => {
+          formData.append('files', it.file);
+          formData.append('paths', it.path);
+        });
+      }
+
+      setUploadStatus((prev) => (prev ? { ...prev, progress: 60 } : null));
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error || 'Fallo en la subida');
+      }
+
+      const resData = await res.json();
+
+      setUploadStatus({
+        isUploading: false,
+        progress: 100,
+        totalFiles: items.length,
+        message: `✓ ${resData.count || items.length} archivo(s) guardado(s) correctamente`,
+        isSuccess: true,
+      });
+
+      // Reload directory files
+      loadFiles(currentFolder, true);
+
+      // Auto close toast after 4s
+      setTimeout(() => {
+        setUploadStatus((cur) => (cur?.isSuccess ? null : cur));
+      }, 4000);
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Error al subir';
+      setUploadStatus({
+        isUploading: false,
+        progress: 0,
+        totalFiles: items.length,
+        message: errorMsg,
+        isError: true,
+      });
+    }
   };
 
+  // 1. Files picked via OS file dialog
+  const handleFilesPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const items: FileUploadItem[] = Array.from(e.target.files).map((f) => ({
+        file: f,
+        path: f.name,
+      }));
+      executeUpload(items);
+      e.target.value = ''; // Reset input
+    }
+  };
+
+  // 2. Folder picked via OS folder dialog
+  const handleFolderPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const items: FileUploadItem[] = Array.from(e.target.files).map((f) => ({
+        file: f,
+        path: f.webkitRelativePath || f.name,
+      }));
+      executeUpload(items);
+      e.target.value = ''; // Reset input
+    }
+  };
+
+  // 3. Replace single file picked
+  const handleReplacePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0 && replacingTargetFile) {
+      const file = e.target.files[0];
+      executeUpload([{ file, path: file.name }], replacingTargetFile.name);
+      setReplacingTargetFile(null);
+      e.target.value = '';
+    }
+  };
+
+  // 4. Drag & Drop on entire window
+  const handleWindowDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+      setIsDraggingOver(true);
+    }
+  };
+
+  const handleWindowDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      setIsDraggingOver(false);
+      dragCounterRef.current = 0;
+    }
+  };
+
+  const handleWindowDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleWindowDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    dragCounterRef.current = 0;
+
+    const dtItems = e.dataTransfer.items;
+    if (!dtItems || dtItems.length === 0) return;
+
+    const collected: FileUploadItem[] = [];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const traverse = async (entry: any, prefix = ''): Promise<void> => {
+      if (entry.isFile) {
+        return new Promise((resolve) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          entry.file((file: File) => {
+            collected.push({
+              file,
+              path: prefix ? `${prefix}/${file.name}` : file.name,
+            });
+            resolve();
+          });
+        });
+      } else if (entry.isDirectory) {
+        const nextPrefix = prefix ? `${prefix}/${entry.name}` : entry.name;
+        const reader = entry.createReader();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const readBatch = (): Promise<any[]> =>
+          new Promise((resolve) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            reader.readEntries((entries: any[]) => resolve(entries));
+          });
+
+        let entries;
+        do {
+          entries = await readBatch();
+          for (const ch of entries) {
+            await traverse(ch, nextPrefix);
+          }
+        } while (entries.length > 0);
+      }
+    };
+
+    const promises = [];
+    for (let i = 0; i < dtItems.length; i++) {
+      const it = dtItems[i];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const entry = (it as any).webkitGetAsEntry ? (it as any).webkitGetAsEntry() : null;
+      if (entry) {
+        promises.push(traverse(entry));
+      } else {
+        const file = it.getAsFile();
+        if (file) collected.push({ file, path: file.name });
+      }
+    }
+
+    await Promise.all(promises);
+    if (collected.length > 0) {
+      executeUpload(collected);
+    }
+  };
+
+  // Rename handlers
   const handleOpenRenameFolder = (folder: FolderInfo) => {
     setRenameTarget({
       isOpen: true,
@@ -131,14 +336,59 @@ export default function DocumentPortalPage() {
   }, [data, searchQuery]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
+    <div
+      onDragEnter={handleWindowDragEnter}
+      onDragLeave={handleWindowDragLeave}
+      onDragOver={handleWindowDragOver}
+      onDrop={handleWindowDrop}
+      className="min-h-screen bg-slate-50 text-slate-800 flex flex-col relative select-none"
+    >
+      {/* Hidden file inputs for direct OS dialogs */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        onChange={handleFilesPicked}
+        className="hidden"
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        // @ts-expect-error webkitdirectory is standard in modern browsers
+        webkitdirectory=""
+        directory=""
+        multiple
+        onChange={handleFolderPicked}
+        className="hidden"
+      />
+      <input
+        ref={replaceInputRef}
+        type="file"
+        onChange={handleReplacePicked}
+        className="hidden"
+      />
+
+      {/* Full-screen drag overlay */}
+      {isDraggingOver && (
+        <div className="fixed inset-0 z-50 bg-blue-600/90 backdrop-blur-xs flex flex-col items-center justify-center text-white pointer-events-none animate-in fade-in duration-150">
+          <div className="p-5 bg-white/20 rounded-full mb-4 animate-bounce">
+            <ArrowDownToLine className="w-16 h-16" />
+          </div>
+          <h2 className="text-2xl font-bold mb-1">Suelta los archivos o carpetas aquí</h2>
+          <p className="text-sm text-blue-100">
+            Se subirán directamente a:{' '}
+            <strong className="underline underline-offset-4">
+              {currentFolder ? `/${currentFolder}` : 'Raíz (/)'}
+            </strong>
+          </p>
+        </div>
+      )}
+
       {/* Top Navbar */}
       <Navbar
         onOpenQr={() => setIsQrOpen(true)}
-        onOpenUpload={() => {
-          setReplaceTargetFile(null);
-          setIsUploadOpen(true);
-        }}
+        onUploadFiles={() => fileInputRef.current?.click()}
+        onUploadFolder={() => folderInputRef.current?.click()}
         onNewFolder={() => setIsNewFolderOpen(true)}
         onRefresh={() => loadFiles(currentFolder, true)}
         isRefreshing={isRefreshing}
@@ -150,8 +400,8 @@ export default function DocumentPortalPage() {
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         
-        {/* Search & Navigation Bar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        {/* Navigation & Search */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <Breadcrumbs
             items={data?.breadcrumbs || [{ name: 'Inicio', path: '' }]}
             onNavigate={handleNavigate}
@@ -178,49 +428,47 @@ export default function DocumentPortalPage() {
           </div>
         </div>
 
-        {/* Quick Explorer Actions Toolbar */}
+        {/* Real Explorer Toolbar */}
         <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
+            
+            {/* New Folder Button */}
             <button
               onClick={() => setIsNewFolderOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
             >
               <FolderPlus className="w-4 h-4 text-amber-600" />
               <span>Nueva Carpeta</span>
             </button>
 
+            {/* Direct Upload Files Button (No modal, opens OS dialog directly) */}
             <button
-              onClick={() => {
-                setReplaceTargetFile(null);
-                setIsUploadOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
             >
-              <Upload className="w-4 h-4 text-blue-600" />
+              <Files className="w-4 h-4" />
               <span>Subir Archivos</span>
             </button>
 
+            {/* Direct Upload Folder Button (No modal, opens OS folder dialog directly) */}
             <button
-              onClick={() => {
-                setReplaceTargetFile(null);
-                setIsUploadOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+              onClick={() => folderInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
             >
-              <FolderOpen className="w-4 h-4 text-emerald-600" />
+              <FolderUp className="w-4 h-4" />
               <span>Subir Carpeta Completa</span>
             </button>
           </div>
 
           <div className="text-xs text-slate-500 font-medium">
             Ubicación actual:{' '}
-            <strong className="text-slate-800">
+            <strong className="text-slate-800 font-mono bg-slate-100 px-2 py-0.5 rounded">
               {currentFolder ? `/${currentFolder}` : 'Raíz (/)'}
             </strong>
           </div>
         </div>
 
-        {/* Content sections */}
+        {/* Explorer Content */}
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
             <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
@@ -238,13 +486,6 @@ export default function DocumentPortalPage() {
                     Carpetas {filteredFolders.length > 0 ? `(${filteredFolders.length})` : ''}
                   </h3>
                 </div>
-                <button
-                  onClick={() => setIsNewFolderOpen(true)}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 bg-blue-50/70 hover:bg-blue-100/70 px-2.5 py-1 rounded-lg transition-colors border border-blue-200"
-                >
-                  <FolderPlus className="w-3.5 h-3.5" />
-                  <span>+ Crear Carpeta aquí</span>
-                </button>
               </div>
 
               {filteredFolders.length > 0 ? (
@@ -267,7 +508,7 @@ export default function DocumentPortalPage() {
                       onClick={() => setIsNewFolderOpen(true)}
                       className="text-blue-600 hover:underline font-semibold"
                     >
-                      Crear una carpeta
+                      + Crear una carpeta aquí
                     </button>
                   </p>
                 </div>
@@ -299,7 +540,10 @@ export default function DocumentPortalPage() {
                       file={file}
                       onView={(f) => setViewingPdfFile(f)}
                       onRename={handleOpenRenameFile}
-                      onReplace={handleOpenReplace}
+                      onReplace={(f) => {
+                        setReplacingTargetFile(f);
+                        replaceInputRef.current?.click();
+                      }}
                       onDeleteSuccess={() => loadFiles(currentFolder, true)}
                     />
                   ))}
@@ -312,31 +556,35 @@ export default function DocumentPortalPage() {
                   <h4 className="text-sm font-bold text-slate-800 mb-1">
                     {searchQuery
                       ? 'No hay archivos que coincidan con la búsqueda'
-                      : 'No hay documentos en esta ubicación'}
+                      : 'Esta ubicación no tiene archivos'}
                   </h4>
                   <p className="text-xs text-slate-500 max-w-sm mb-4">
                     {searchQuery
                       ? 'Prueba buscando con otra palabra o revisa la ortografía.'
-                      : 'Puedes crear una subcarpeta o subir nuevos archivos directamente.'}
+                      : 'Puedes arrastrar archivos o carpetas directamente desde Windows a esta ventana, o usar los botones de abajo.'}
                   </p>
                   {!searchQuery && (
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-center gap-2.5">
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs"
+                      >
+                        <Files className="w-4 h-4" />
+                        <span>Subir Archivos</span>
+                      </button>
+                      <button
+                        onClick={() => folderInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs"
+                      >
+                        <FolderUp className="w-4 h-4" />
+                        <span>Subir Carpeta Completa</span>
+                      </button>
                       <button
                         onClick={() => setIsNewFolderOpen(true)}
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shadow-2xs"
                       >
                         <FolderPlus className="w-4 h-4 text-amber-600" />
                         <span>Nueva Carpeta</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setReplaceTargetFile(null);
-                          setIsUploadOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs"
-                      >
-                        <Upload className="w-4 h-4" />
-                        <span>Subir Archivo</span>
                       </button>
                     </div>
                   )}
@@ -366,14 +614,6 @@ export default function DocumentPortalPage() {
         onClose={() => setViewingPdfFile(null)}
       />
 
-      <UploadModal
-        isOpen={isUploadOpen}
-        onClose={() => setIsUploadOpen(false)}
-        currentFolder={currentFolder}
-        replaceTargetName={replaceTargetFile?.name}
-        onUploadSuccess={() => loadFiles(currentFolder, true)}
-      />
-
       <NewFolderModal
         isOpen={isNewFolderOpen}
         onClose={() => setIsNewFolderOpen(false)}
@@ -388,6 +628,12 @@ export default function DocumentPortalPage() {
         initialName={renameTarget.initialName}
         isFolder={renameTarget.isFolder}
         onSuccess={() => loadFiles(currentFolder, true)}
+      />
+
+      {/* Floating Upload Progress Toast (like Google Drive) */}
+      <UploadToast
+        status={uploadStatus}
+        onClose={() => setUploadStatus(null)}
       />
     </div>
   );
